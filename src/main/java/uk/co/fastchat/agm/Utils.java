@@ -1,4 +1,4 @@
-package co.uk.fastchat.agm;
+package uk.co.fastchat.agm;
 
 import com.omertron.thetvdbapi.model.Episode;
 
@@ -8,8 +8,7 @@ import java.net.URL;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.Charset;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -74,7 +73,7 @@ public class Utils {
             System.err.println("IO Exception: " + ioEx.getMessage());
         }
 
-        return true;
+        return false;
     }
 
     public static Map<Episode, Float> sortByComparator(Map<Episode, Float> unsortMap, final boolean order)
@@ -119,59 +118,71 @@ public class Utils {
         return outString.toString();
     }
 
-    private static String hashFile(File file, String algorithm) throws HashGenerationException{
-
-        return hashFile(file, algorithm, -1);
-    }
-
-    private static String hashFile(File file, String algorithm, int bytesToRead) throws HashGenerationException {
+    // From: http://stackoverflow.com/a/4746734/1622031
+    public static boolean isChildOf(File maybeChild, File possibleParent)
+    {
         try {
-            FileInputStream inputStream = new FileInputStream(file);
-            MessageDigest digest = MessageDigest.getInstance(algorithm);
-
-            byte[] bytesBuffer = new byte[1024];
-            int bytesRead = -1;
-            int totalBytesRead = 0;
-
-            while ((bytesRead = inputStream.read(bytesBuffer)) != -1) {
-                digest.update(bytesBuffer, 0, bytesRead);
-                totalBytesRead += bytesRead;
-                if(bytesToRead > 0 && totalBytesRead >= bytesToRead){
-                    break;
-                }
+            final File parent = possibleParent.getCanonicalFile();
+            if (!parent.exists() || !parent.isDirectory()) {
+                // this cannot possibly be the parent
+                return false;
             }
 
-            byte[] hashedBytes = digest.digest();
+            File child = maybeChild.getCanonicalFile();
+            while (child != null) {
+                if (child.equals(parent)) {
+                    return true;
+                }
+                child = child.getParentFile();
+            }
+        } catch (IOException e) {
+            // There was an error
+            return false;
+        }
+        // No match found and we've hit the root directory
+        return false;
+    }
 
-            return convertByteArrayToHexString(hashedBytes);
-        } catch (NoSuchAlgorithmException exp) {
-            throw new HashGenerationException(
-                    "Could not generate hash from file", exp);
-        } catch (IOException ex) {
-            throw new HashGenerationException(
-                    "Could not generate hash from file", ex);
+    public static String getRelativePath(File child, File parent){
+
+        try {
+            // If child isn't a child of parent return null;
+            if (!isChildOf(child, parent)) {
+                return null;
+            } else {
+                return child.getCanonicalPath().substring(parent.getCanonicalPath().length() + 1);
+            }
+        } catch (IOException e){
+            e.printStackTrace();
+            return null;
         }
     }
 
-    public static String generateMD5(File file) throws HashGenerationException {
+    public static boolean buildDirectoryTree(File bottomLeafDirectory) {
 
-        return hashFile(file, "MD5", 4096);
-    }
-
-    public static String generateSHA1(File file) throws HashGenerationException {
-        return hashFile(file, "SHA-1");
-    }
-
-    public static String generateSHA256(File file) throws HashGenerationException {
-        return hashFile(file, "SHA-256");
-    }
-
-    private static String convertByteArrayToHexString(byte[] arrayBytes) {
-        StringBuffer stringBuffer = new StringBuffer();
-        for (int i = 0; i < arrayBytes.length; i++) {
-            stringBuffer.append(Integer.toString((arrayBytes[i] & 0xff) + 0x100, 16)
-                    .substring(1));
+        if (Files.isDirectory(bottomLeafDirectory.toPath())) {
+            return true;
         }
-        return stringBuffer.toString();
+
+        ArrayList<File> leafDirs = new ArrayList<File>();
+        File leafDir = bottomLeafDirectory;
+
+        while(!Files.isDirectory(leafDir.toPath())){
+            leafDirs.add(leafDir);
+            leafDir = leafDir.getParentFile();
+        }
+
+        Collections.reverse(leafDirs);
+
+        for (File leaf : leafDirs){
+            try {
+                Files.createDirectories(leaf.toPath());
+            } catch (IOException ioe){
+                ioe.printStackTrace();
+                return false;
+            }
+        }
+
+        return true;
     }
 }
